@@ -30,6 +30,8 @@
             if (pageId === 'prediction-page' && mapInstance) {
                 setTimeout(() => mapInstance.invalidateSize(), 0);
             }
+            // Ensure translations update on every page navigation
+            if (typeof translateStaticText === 'function') translateStaticText();
         }
 
         // --- Prediction Form Steps ---
@@ -850,3 +852,281 @@
             document.getElementById('crop-recommendation').textContent = result.crop_recommendation;
             document.getElementById('prediction-explanation').textContent = result.explanation;
         }
+
+// i18next integration for multilingual support
+// (No import needed, i18next is loaded globally from CDN)
+
+i18next.init({
+  lng: 'en',
+  fallbackLng: 'en',
+  resources: {
+    en: { translation: {
+      'Help Center': 'Help Center',
+      'Find answers or reach out for assistance': 'Find answers or reach out for assistance',
+      'FAQs': 'FAQs',
+      'Contact': 'Contact',
+      'Dashboard': 'Dashboard',
+      'Welcome. Please log in.': 'Welcome. Please log in.',
+      'Crop Yield': 'Crop Yield',
+      'Smart Advisory': 'Smart Advisory',
+      'Weather': 'Weather',
+      'Weather Forecast': 'Weather Forecast',
+      'Mandi Prices': 'Mandi Prices',
+      'Community Forum': 'Community Forum',
+      'Quick Actions': 'Quick Actions',
+      'Predict Yield': 'Predict Yield',
+      'Get Advisory': 'Get Advisory',
+      'Check Weather': 'Check Weather',
+      'Join Forum': 'Join Forum',
+      'How can I check crop prices?': 'How can I check crop prices?',
+      'Go to the "Mandi Prices" section from the sidebar. You can view daily updated prices.': 'Go to the "Mandi Prices" section from the sidebar. You can view daily updated prices.',
+      'How do I get weather updates?': 'How do I get weather updates?',
+      'Open the "Weather" page in the app. It shows real-time forecasts for your location.': 'Open the "Weather" page in the app. It shows real-time forecasts for your location.',
+      'Who can I contact for technical help?': 'Who can I contact for technical help?',
+      'Use the Contact tab in this Help Center to reach our support team directly.': 'Use the Contact tab in this Help Center to reach our support team directly.',
+      'Weather Overview': 'Weather Overview',
+      'Soil Data': 'Soil Data',
+      'District': 'District',
+      'Average Min': 'Average Min',
+      'Average Modal': 'Average Modal',
+      'Average Max': 'Average Max',
+      'View All': 'View All',
+      'Loading...': 'Loading...',
+      '--°C': '--°C',
+      '--%': '--%',
+      '-- km/h': '-- km/h',
+      'Sensor offline. Check connection.': 'Sensor offline. Check connection.',
+      'Connecting to sensor...': 'Connecting to sensor...',
+      'Clouds': 'Clouds',
+      'Rain': 'Rain',
+      'Clear': 'Clear',
+      'Thunderstorm': 'Thunderstorm',
+      'Drizzle': 'Drizzle',
+      'Mist': 'Mist',
+      'Haze': 'Haze',
+      'Fog': 'Fog',
+      'Snow': 'Snow',
+    }},
+    hi: { translation: {
+      'Help Center': 'सहायता केंद्र',
+      'Find answers or reach out for assistance': 'उत्तर खोजें या सहायता के लिए संपर्क करें',
+      'FAQs': 'सामान्य प्रश्न',
+      'Contact': 'संपर्क करें',
+      'Dashboard': 'डैशबोर्ड',
+      'Welcome. Please log in.': 'स्वागत है। कृपया लॉगिन करें।',
+      'Crop Yield': 'फसल उपज',
+      'Smart Advisory': 'स्मार्ट सलाह',
+      'Weather': 'मौसम',
+      'Weather Forecast': 'मौसम पूर्वानुमान',
+      'Mandi Prices': 'मंडी दाम',
+      'Community Forum': 'समुदाय मंच',
+      'Quick Actions': 'त्वरित क्रियाएँ',
+      'Predict Yield': 'उपज अनुमान',
+      'Get Advisory': 'सलाह प्राप्त करें',
+      'Check Weather': 'मौसम देखें',
+      'Join Forum': 'फोरम जॉइन करें',
+      'How can I check crop prices?': 'मैं फसल के दाम कैसे देख सकता हूँ?',
+      'Go to the "Mandi Prices" section from the sidebar. You can view daily updated prices.': 'साइडबार से "मंडी दाम" अनुभाग में जाएं। आप प्रतिदिन अपडेट किए गए दाम देख सकते हैं।',
+      'How do I get weather updates?': 'मौसम की जानकारी कैसे प्राप्त करें?',
+      'Open the "Weather" page in the app. It shows real-time forecasts for your location.': 'ऐप में "मौसम" पेज खोलें। यह आपके स्थान के लिए रीयल-टाइम पूर्वानुमान दिखाता है।',
+      'Who can I contact for technical help?': 'तकनीकी सहायता के लिए किससे संपर्क करें?',
+      'Use the Contact tab in this Help Center to reach our support team directly.': 'हमारी सहायता टीम से सीधे संपर्क करने के लिए इस सहायता केंद्र में संपर्क टैब का उपयोग करें।',
+      'Weather Overview': 'मौसम का अवलोकन',
+      'Soil Data': 'मिट्टी का डेटा',
+      'District': 'जिला',
+      'Average Min': 'औसत न्यूनतम',
+      'Average Modal': 'औसत मोडल',
+      'Average Max': 'औसत अधिकतम',
+      'View All': 'सभी देखें',
+      'Loading...': 'लोड हो रहा है...',
+      '--°C': '--°से',
+      '--%': '--%',
+      '-- km/h': '-- किमी/घंटा',
+      'Sensor offline. Check connection.': 'सेंसर ऑफ़लाइन है। कनेक्शन जांचें।',
+      'Connecting to sensor...': 'सेंसर से कनेक्ट हो रहा है...',
+      'Clouds': 'बादल',
+      'Rain': 'बारिश',
+      'Clear': 'साफ़',
+      'Thunderstorm': 'आंधी',
+      'Drizzle': 'फुहार',
+      'Mist': 'कोहरा',
+      'Haze': 'धुंध',
+      'Fog': 'कोहरा',
+      'Snow': 'बर्फ',
+    }},
+    or: { translation: {
+      'Help Center': 'ସହଯୋଗ କେନ୍ଦ୍ର',
+      'Find answers or reach out for assistance': 'ଉତ୍ତର ଖୋଜନ୍ତୁ କିମ୍ବା ସହଯୋଗ ପାଇଁ ଯୋଗାଯୋଗ କରନ୍ତୁ।',
+      'FAQs': 'ସାଧାରଣ ପ୍ରଶ୍ନ',
+      'Contact': 'ଯୋଗାଯୋଗ',
+      'Dashboard': 'ଡ୍ୟାସବୋର୍ଡ',
+      'Welcome. Please log in.': 'ସ୍ୱାଗତ। ଦୟାକରି ଲଗଇନ୍ କରନ୍ତୁ।',
+      'Crop Yield': 'ଫସଲ ଉତ୍ପାଦନ',
+      'Smart Advisory': 'ସ୍ମାର୍ଟ ପରାମର୍ଶ',
+      'Weather': 'ପାଣିପାଗ',
+      'Weather Forecast': 'ପାଣିପାଗ ପୂର୍ବାନୁମାନ',
+      'Mandi Prices': 'ମଣ୍ଡି ଦର',
+      'Community Forum': 'ସମୁଦାୟ ଫୋରମ୍',
+      'Quick Actions': 'ତ୍ୱରିତ କାର୍ଯ୍ୟ',
+      'Predict Yield': 'ଉତ୍ପାଦନ ଅନୁମାନ',
+      'Get Advisory': 'ପରାମର୍ଶ ନିଅନ୍ତୁ',
+      'Check Weather': 'ପାଣିପାଗ ଦେଖନ୍ତୁ',
+      'Join Forum': 'ଫୋରମ୍ ଯୋଗଦିଅନ୍ତୁ',
+      'How can I check crop prices?': 'ମୁଁ କିପରି ଫସଲ ଦର ଦେଖିପାରିବି?',
+      'Go to the "Mandi Prices" section from the sidebar. You can view daily updated prices.': 'ସାଇଡବାରରୁ "ମଣ୍ଡି ଦର" ଅଞ୍ଚଳକୁ ଯାଆନ୍ତୁ। ଆପଣ ପ୍ରତିଦିନ ଅଦ୍ୟତିତ ଦର ଦେଖିପାରିବେ।',
+      'How do I get weather updates?': 'ମୁଁ କିପରି ପାଣିପାଗ ଅଦ୍ୟତନ ମିଳିପାରିବି?',
+      'Open the "Weather" page in the app. It shows real-time forecasts for your location.': 'ଆପ୍ରେ "ପାଣିପାଗ" ପୃଷ୍ଠା ଖୋଲନ୍ତୁ। ଏହା ଆପଣଙ୍କ ଅଞ୍ଚଳ ପାଇଁ ରିଅଲ୍-ଟାଇମ୍ ପୂର୍ବାନୁମାନ ଦେଖାଏ।',
+      'Who can I contact for technical help?': 'ମୁଁ କାହା ସହିତ ତକନିକୀ ସହଯୋଗ ପାଇଁ ଯୋଗାଯୋଗ କରିପାରିବି?',
+      'Use the Contact tab in this Help Center to reach our support team directly.': 'ଏହି ସହଯୋଗ କେନ୍ଦ୍ରରେ ଥିବା ଯୋଗାଯୋଗ ଟ୍ୟାବ୍ ବ୍ୟବହାର କରି ଆମ ସହଯୋଗ ଦଳ ସହିତ ସିଧାସଳଖ ଯୋଗାଯୋଗ କରନ୍ତୁ।',
+      'Weather Overview': 'ପାଣିପାଗ ସମୀକ୍ଷା',
+      'Soil Data': 'ମାଟି ତଥ୍ୟ',
+      'District': 'ଜିଲ୍ଲା',
+      'Average Min': 'ସର୍ବନିମ୍ନ ହାରାହାରି',
+      'Average Modal': 'ମୋଡାଲ୍ ହାରାହାରି',
+      'Average Max': 'ସର୍ବାଧିକ ହାରାହାରି',
+      'View All': 'ସମସ୍ତ ଦେଖନ୍ତୁ',
+      'Loading...': 'ଲୋଡିଂ...',
+      '--°C': '--°ସେ',
+      '--%': '--%',
+      '-- km/h': '-- କିମି/ଘଣ୍ଟା',
+      'Sensor offline. Check connection.': 'ସେନ୍ସର୍ ଅଫ୍ଲାଇନ୍। ସଂଯୋଗ ଯାଞ୍ଚ କରନ୍ତୁ।',
+      'Connecting to sensor...': 'ସେନ୍ସର୍ ସହିତ ସଂଯୋଗ କରୁଛି...',
+      'Clouds': 'ମେଘ',
+      'Rain': 'ବର୍ଷା',
+      'Clear': 'ପରିଷ୍କାର',
+      'Thunderstorm': 'ଗଜଗଜି',
+      'Drizzle': 'ଫୁହାର',
+      'Mist': 'ଧୂସର',
+      'Haze': 'ଧୂସର',
+      'Fog': 'କୁହୁଡ଼ି',
+      'Snow': 'ହିମ',
+    }},
+    // Add similar translation objects for mr, ta, te, bn, gu, pa, kn as needed
+  }
+});
+
+function setLanguage(lang) {
+  i18next.changeLanguage(lang, () => {
+    translateStaticText();
+  });
+}
+
+function translateDynamicDashboard() {
+  // Weather card (dynamic)
+  const temp = document.getElementById('dashboard-temp');
+  const cond = document.getElementById('dashboard-condition');
+  const hum = document.getElementById('dashboard-humidity');
+  const wind = document.getElementById('dashboard-wind');
+  if (typeof lastWeatherData === 'object' && lastWeatherData && temp && cond && hum && wind) {
+    temp.textContent = `${lastWeatherData.tempC}°C`;
+    cond.textContent = i18next.t(lastWeatherData.condition);
+    hum.innerHTML = `<i data-lucide="droplets" class="w-4 h-4 mr-2"></i> ${lastWeatherData.humidity}%`;
+    wind.innerHTML = `<i data-lucide="wind" class="w-4 h-4 mr-2"></i> ${lastWeatherData.windKmh} km/h`;
+  } else {
+    // Placeholders if no data
+    if (temp) temp.textContent = i18next.t('--°C');
+    if (cond) cond.textContent = i18next.t('Loading...');
+    if (hum) hum.innerHTML = `<i data-lucide="droplets" class="w-4 h-4 mr-2"></i> ${i18next.t('--%')}`;
+    if (wind) wind.innerHTML = `<i data-lucide="wind" class="w-4 h-4 mr-2"></i> ${i18next.t('-- km/h')}`;
+  }
+  // Soil sensor loading
+  const soilLoading = document.getElementById('soil-data-loading');
+  if (soilLoading) {
+    const span = soilLoading.querySelector('span');
+    if (span && (span.textContent.trim() === 'Connecting to sensor...' || span.textContent.trim() === 'सेंसर से कनेक्ट हो रहा है...' || span.textContent.trim() === 'ସେନ୍ସର୍ ସହିତ ସଂଯୋଗ କରୁଛି...')) span.textContent = i18next.t('Connecting to sensor...');
+  }
+  // Soil sensor error
+  const soilError = document.getElementById('soil-data-error');
+  if (soilError) {
+    const p = soilError.querySelector('p');
+    if (p && (p.textContent.trim() === 'Sensor offline. Check connection.' || p.textContent.trim() === 'सेंसर ऑफ़लाइन है। कनेक्शन जांचें।' || p.textContent.trim() === 'ସେନ୍ସର୍ ଅଫ୍ଲାଇନ୍। ସଂଯୋଗ ଯାଞ୍ଚ କରନ୍ତୁ।')) p.textContent = i18next.t('Sensor offline. Check connection.');
+  }
+}
+
+function translateStaticText() {
+  // Dashboard
+  const dashboardHeader = document.querySelector('#dashboard-page h1');
+  if (dashboardHeader) dashboardHeader.textContent = i18next.t('कृषि Sahayak');
+  const welcomeText = document.getElementById('welcome-text');
+  if (welcomeText) welcomeText.textContent = i18next.t('Welcome. Please log in.');
+  // Main nav/sidebar
+  document.querySelectorAll('.nav-item-desktop span, .nav-item-mobile p').forEach(el => {
+    if (el.textContent.trim() === 'Dashboard') el.textContent = i18next.t('Dashboard');
+    if (el.textContent.trim() === 'Crop Yield') el.textContent = i18next.t('Crop Yield');
+    if (el.textContent.trim() === 'Smart Advisory') el.textContent = i18next.t('Smart Advisory');
+    if (el.textContent.trim() === 'Weather') el.textContent = i18next.t('Weather');
+    if (el.textContent.trim() === 'Mandi Prices' || el.textContent.trim() === 'Mandi') el.textContent = i18next.t('Mandi Prices');
+    if (el.textContent.trim() === 'Forum' || el.textContent.trim() === 'Community') el.textContent = i18next.t('Community Forum');
+  });
+  // Dashboard cards
+  const dashCardHeaders = document.querySelectorAll('#dashboard-page .font-semibold.text-lg, #dashboard-page .font-semibold.text-lg.mb-4');
+  dashCardHeaders.forEach(el => {
+    if (el.textContent.trim() === 'Weather Overview') el.textContent = i18next.t('Weather Overview');
+    if (el.textContent.trim() === 'Soil Data') el.textContent = i18next.t('Soil Data');
+    if (el.textContent.trim() === 'Mandi Prices') el.textContent = i18next.t('Mandi Prices');
+    if (el.textContent.trim() === 'Quick Actions') el.textContent = i18next.t('Quick Actions');
+  });
+  // Dashboard card labels
+  const dashLabels = document.querySelectorAll('#dashboard-page label, #dashboard-page .text-xs');
+  dashLabels.forEach(el => {
+    if (el.textContent.trim() === 'District') el.textContent = i18next.t('District');
+    if (el.textContent.trim() === 'Average Min') el.textContent = i18next.t('Average Min');
+    if (el.textContent.trim() === 'Average Modal') el.textContent = i18next.t('Average Modal');
+    if (el.textContent.trim() === 'Average Max') el.textContent = i18next.t('Average Max');
+  });
+  // View All button
+  const viewAllBtn = document.querySelector('#dashboard-page button.text-blue-600, #dashboard-page button.text-blue-400');
+  if (viewAllBtn && (viewAllBtn.textContent.trim() === 'View All')) viewAllBtn.textContent = i18next.t('View All');
+  // Quick Actions buttons
+  document.querySelectorAll('#dashboard-page .grid button p').forEach(el => {
+    if (el.textContent.trim() === 'Predict Yield') el.textContent = i18next.t('Predict Yield');
+    if (el.textContent.trim() === 'Get Advisory') el.textContent = i18next.t('Get Advisory');
+    if (el.textContent.trim() === 'Check Weather') el.textContent = i18next.t('Check Weather');
+    if (el.textContent.trim() === 'Join Forum') el.textContent = i18next.t('Join Forum');
+  });
+  // Help Center
+  const helpHeader = document.querySelector('#help-page h1');
+  if (helpHeader) helpHeader.textContent = i18next.t('Help Center');
+  const helpSub = document.querySelector('#help-page p');
+  if (helpSub) helpSub.textContent = i18next.t('Find answers or reach out for assistance');
+  const faqTab = document.getElementById('faq-tab');
+  if (faqTab) faqTab.textContent = i18next.t('FAQs');
+  const contactTab = document.getElementById('contact-tab');
+  if (contactTab) contactTab.textContent = i18next.t('Contact');
+  // FAQ questions
+  const faqQuestions = document.querySelectorAll('#faq-section button span');
+  const faqQKeys = [
+    'How can I check crop prices?',
+    'How do I get weather updates?',
+    'Who can I contact for technical help?'
+  ];
+  faqQuestions.forEach((el, idx) => {
+    el.childNodes[1].textContent = i18next.t(faqQKeys[idx]);
+  });
+  // FAQ answers
+  const faqAnswers = document.querySelectorAll('#faq-section .faq-answer p');
+  const faqAKeys = [
+    'Go to the "Mandi Prices" section from the sidebar. You can view daily updated prices.',
+    'Open the "Weather" page in the app. It shows real-time forecasts for your location.',
+    'Use the Contact tab in this Help Center to reach our support team directly.'
+  ];
+  faqAnswers.forEach((el, idx) => {
+    el.textContent = i18next.t(faqAKeys[idx]);
+  });
+  // Weather page
+  const weatherHeader = document.querySelector('#weather-page h1');
+  if (weatherHeader) weatherHeader.textContent = i18next.t('Weather Forecast');
+  // Mandi page
+  const mandiHeader = document.querySelector('#mandi-page h1');
+  if (mandiHeader) mandiHeader.textContent = i18next.t('Mandi Prices');
+  // Community Forum
+  const forumHeader = document.querySelector('#community-page h1');
+  if (forumHeader) forumHeader.textContent = i18next.t('Community Forum');
+  // Smart Advisory
+  const advisoryHeader = document.querySelector('#advisory-page h1');
+  if (advisoryHeader) advisoryHeader.textContent = i18next.t('Smart Advisory');
+  translateDynamicDashboard();
+}
+
+window.setLanguage = setLanguage;
+window.addEventListener('DOMContentLoaded', translateStaticText);
