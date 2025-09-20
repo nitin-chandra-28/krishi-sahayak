@@ -7,6 +7,18 @@
         let mapInstance = null;
         let currentDistrict = 'Hisar';
         let lastWeatherData = null;
+        // District rainfall norms (approx annual mm) for variability by location
+        const districtRainfallNorms = {
+            Hisar: 429,
+            Indore: 955,
+            Karnal: 734,
+            Nagpur: 1100,
+            Sirsa: 412,
+            Aurangabad: 734
+        };
+    // data readiness flags
+    window.__soilReady = false;
+    window.__weatherReady = false;
         
         // --- Page Navigation ---
         function navigateToPage(pageId) {
@@ -165,12 +177,16 @@
                     const temp = Math.round(data.main.temp);
                     const condition = data.weather[0].main;
                     const city = data.name;
+                    // crude rainfall estimate from current conditions (for variability demo)
+                    const conditionRainMap = { 'Thunderstorm': 20, 'Drizzle': 5, 'Rain': 15, 'Snow': 10, 'Clouds': 2, 'Clear': 0 };
+                    const estRain = conditionRainMap[condition] ?? 1;
                     lastWeatherData = {
                         city,
                         tempC: temp,
                         condition,
                         humidity: data.main.humidity,
-                        windKmh: Math.round(data.wind.speed * 3.6)
+                        windKmh: Math.round(data.wind.speed * 3.6),
+                        rainfall: estRain * 30 // approx monthly mm proxy to drive variability
                     };
 
                     // Update Dashboard Card
@@ -193,6 +209,9 @@
                     }
 
                     lucide.createIcons();
+                    // mark weather ready for predictions
+                    window.__weatherReady = true;
+                    try { if (typeof updatePredictionReadiness === 'function') updatePredictionReadiness(); } catch(_) {}
                 })
                 .catch(err => console.error("Weather API error:", err));
         }
@@ -216,6 +235,7 @@
                     soilDataLoading.classList.add('hidden');
                     soilDataContent.classList.remove('hidden');
                     document.getElementById('advisory-message').innerHTML = `Loading AI advisory...`;
+                    window.__soilReady = true;
                     // Compose minimal soil summary from dataset row
                     const dataset = (typeof districtSoilData !== 'undefined') ? districtSoilData : (typeof window.districtSoilData !== 'undefined' ? window.districtSoilData : undefined);
                     const row = dataset ? dataset[currentDistrict] : null;
@@ -223,6 +243,7 @@
                     generateSmartAdvisory(soilSummary, lastWeatherData);
                     renderAdvisoryVisual('Maintain regular irrigation and monitor for pests.', soilSummary);
                     lucide.createIcons();
+                    try { if (typeof updatePredictionReadiness === 'function') updatePredictionReadiness(); } catch(_) {}
                 }, 800);
             } else {
                 setTimeout(() => {
@@ -242,6 +263,8 @@
                     const fakeWeatherData = { forecast: 'clear', nextRainDays: 5 };
                     generateSmartAdvisory(data, fakeWeatherData);
                     lucide.createIcons();
+                    window.__soilReady = true;
+                    try { if (typeof updatePredictionReadiness === 'function') updatePredictionReadiness(); } catch(_) {}
                 }, 2500);
             }
         }
@@ -693,6 +716,8 @@
                 districtSelect.addEventListener('change', (e) => {
                     currentDistrict = e.target.value;
                     renderSoilDataset(currentDistrict);
+                    window.__soilReady = true;
+                    try { if (typeof updatePredictionReadiness === 'function') updatePredictionReadiness(); } catch(_) {}
                 });
             } else if (districtSelect) {
                 // If dataset still not present for some reason, ensure selector has at least current
@@ -710,6 +735,40 @@
                     renderAdvisoryVisual('Maintain regular irrigation and monitor for pests.', row);
                 });
             }
+        });
+
+        // --- Prediction readiness gate (require soil + weather + area) ---
+        function updatePredictionReadiness() {
+            const btn = document.getElementById('get-prediction-btn');
+            const soilOk = !!window.__soilReady;
+            const weatherOk = !!window.__weatherReady;
+            const areaInput = document.getElementById('farm-area');
+            const areaOk = !!(areaInput && Number(areaInput.value) > 0);
+            const soilLabel = document.getElementById('status-soil');
+            const weatherLabel = document.getElementById('status-weather');
+            if (soilLabel) soilLabel.textContent = soilOk ? 'Soil — ready' : 'Soil — not ready';
+            if (weatherLabel) weatherLabel.textContent = weatherOk ? 'Weather — ready' : 'Weather — not ready';
+            if (btn) btn.disabled = !(soilOk && weatherOk && areaOk);
+        }
+        window.updatePredictionReadiness = updatePredictionReadiness;
+
+        // Guard Get Prediction button and watch inputs
+        window.addEventListener('DOMContentLoaded', function(){
+            const btn = document.getElementById('get-prediction-btn');
+            const areaInput = document.getElementById('farm-area');
+            if (btn) {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    if (btn.disabled) return;
+                    goToPredictionStep(3);
+                    runRuleBasedPrediction();
+                });
+            }
+            if (areaInput) {
+                areaInput.addEventListener('input', () => updatePredictionReadiness());
+            }
+            // initialize state once UI is ready
+            updatePredictionReadiness();
         });
 
         // --- Auto-fill NPK and pH from district soil data if available ---
@@ -822,9 +881,11 @@
         function runRuleBasedPrediction() {
             const districtSelect = document.getElementById('district-select');
             const areaInput = document.getElementById('farm-area');
+            const cropSelect = document.getElementById('crop-select');
             if (!districtSelect || !areaInput) return;
             const district = districtSelect.value;
             const area = parseFloat(areaInput.value) || 1;
+            const crop = (cropSelect && cropSelect.value) ? cropSelect.value : 'Wheat';
             // Use real weather data if available
             let weather = (typeof lastWeatherData !== 'undefined' && lastWeatherData && lastWeatherData.tempC)
                 ? {
@@ -833,10 +894,36 @@
                     humidity: lastWeatherData.humidity
                 }
                 : { rainfall: 700, temperature: 28, humidity: 65 };
+            // Adjust rainfall using district norms and crop factor (rough seasonal proxy)
+            try {
+                const norm = districtRainfallNorms[district];
+                if (norm) {
+                    const cropFactor = (function(){
+                        if (crop === 'Rice') return 0.7;
+                        if (crop === 'Sugarcane') return 0.8;
+                        if (crop === 'Wheat') return 0.45;
+                        if (crop === 'Cotton') return 0.55;
+                        return 0.5;
+                    })();
+                    const seasonalFromNorm = norm * cropFactor; // mm for growing season
+                    const currentSignal = Math.max(0, Number(weather.rainfall) || 0);
+                    weather.rainfall = Math.round(0.8 * seasonalFromNorm + 0.2 * currentSignal);
+                }
+            } catch(_) {}
             // Use real soil data if available
             let soil = (typeof districtSoilData !== 'undefined' && districtSoilData[district])
-                ? districtSoilData[district]
+                ? { ...districtSoilData[district] }
                 : { N: 60, P: 30, K: 30, pH: 7, Zn: 50, Fe: 50, Cu: 50, Mn: 50, B: 50, S: 50 };
+            // if NPK missing from dataset row, approximate from micro averages to add variance
+            (function enhanceSoilFromMicros(){
+                const microKeys = ['Zn','Fe','Cu','Mn','B','S'];
+                const vals = microKeys.map(k => Number(soil[k] ?? 50));
+                const avg = vals.length ? (vals.reduce((a,b)=>a+b,0)/vals.length) : 50;
+                if (soil.N === undefined) soil.N = Math.max(30, Math.min(120, avg * 1.2));
+                if (soil.P === undefined) soil.P = Math.max(15, Math.min(70, avg * 0.6));
+                if (soil.K === undefined) soil.K = Math.max(20, Math.min(90, avg * 0.8));
+                if (soil.pH === undefined && soil.ph === undefined) soil.pH = 6.5 + (avg-50)/200; // 6.25..6.75
+            })();
             if (typeof ruleBasedPrediction !== 'function') {
                 document.getElementById('prediction-explanation').textContent = 'Rule-based prediction function not found.';
                 return;
@@ -845,12 +932,160 @@
                 weather,
                 location: district,
                 size: area,
-                soil
+                soil,
+                crop
             });
             document.getElementById('predicted-yield').textContent = result.predicted_yield + ' quintals';
+            const perAcre = (result.predicted_yield && area) ? (result.predicted_yield/area) : result.predicted_yield;
+            const perAcreEl = document.getElementById('predicted-yield-per-acre');
+            if (perAcreEl) perAcreEl.textContent = (Math.round(perAcre*10)/10) + ' quintals/acre';
             document.getElementById('irrigation-recommendation').textContent = result.irrigation_recommendation;
             document.getElementById('crop-recommendation').textContent = result.crop_recommendation;
             document.getElementById('prediction-explanation').textContent = result.explanation;
+            const confEl = document.getElementById('prediction-confidence');
+            const drvEl = document.getElementById('prediction-drivers');
+            if (confEl) confEl.textContent = Math.round(result.confidence * 100) + '%';
+            if (drvEl) drvEl.textContent = (result.key_drivers || []).slice(0,3).join(', ');
+            // Headline card update
+            const headlineYield = document.getElementById('headline-yield');
+            const headlineConf = document.getElementById('headline-confidence');
+            if (headlineYield) headlineYield.textContent = (Math.round(((result.predicted_yield/area)||0)*10)/10) || '--';
+            if (headlineConf) headlineConf.textContent = Math.round(result.confidence*100) + '%';
+            // Chips
+            const chips = document.getElementById('prediction-drivers-chips');
+            if (chips) {
+                const cls = (t)=>{
+                    const s = (t||'').toLowerCase();
+                    if (s.includes('npk') || s.includes('ph') || s.includes('micro')) return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200';
+                    if (s.includes('temp') || s.includes('rain') || s.includes('humid')) return 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200';
+                    return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200';
+                };
+                const tip = (t)=>{
+                    const s = (t||'').toLowerCase();
+                    if (s.includes('npk')) return 'Balance NPK with recommended doses';
+                    if (s.includes('ph')) return 'Adjust pH with lime/gypsum as needed';
+                    if (s.includes('micro')) return 'Apply micronutrient mix as per soil test';
+                    if (s.includes('temp')) return 'Shift planting window or use tolerant varieties';
+                    if (s.includes('rain')) return 'Plan irrigation/drainage per forecast';
+                    if (s.includes('humid')) return 'Monitor for fungal diseases; use prophylaxis';
+                    return 'Review field conditions and adjust practices';
+                };
+                chips.innerHTML = (result.key_drivers||[]).slice(0,6).map(d=>`<span title="${tip(d)}" class="px-2 py-1 rounded-full text-[11px] border border-gray-200 dark:border-gray-700 ${cls(d)}">${d}</span>`).join('');
+            }
+            // Sparks
+            try {
+                const soilPct = Math.round((result.__soilScore || 0.5) * 100);
+                const weatherPct = Math.round((result.__weatherScore || 0.5) * 100);
+                const soilBar = document.getElementById('spark-soil');
+                const weatherBar = document.getElementById('spark-weather');
+                const labelSoil = document.getElementById('label-soil');
+                const labelWeather = document.getElementById('label-weather');
+                // animate after a short delay to trigger CSS transition
+                setTimeout(() => {
+                    if (soilBar) soilBar.style.width = soilPct + '%';
+                    if (weatherBar) weatherBar.style.width = weatherPct + '%';
+                }, 30);
+                if (labelSoil) labelSoil.textContent = soilPct + '%';
+                if (labelWeather) labelWeather.textContent = weatherPct + '%';
+            } catch(_) {}
+        }
+
+        // Provide an improved, transparent rule-based predictor
+        if (typeof window.ruleBasedPrediction !== 'function') {
+            window.ruleBasedPrediction = function(input){
+                const { soil = {}, weather = {}, size = 1, crop = 'Wheat', location = '—' } = input || {};
+                const cropBaseYield = {
+                    'Wheat': 40,
+                    'Rice': 35,
+                    'Cotton': 12,
+                    'Sugarcane': 320
+                };
+                const base = cropBaseYield[crop] || 30;
+                // Targets (rough heuristics; units simplified for demo)
+                const targets = { N: 80, P: 40, K: 40, pH: [6.5, 7.5] };
+                const npkScore = ['N','P','K'].map(k => {
+                    const v = Number(soil[k] ?? 0);
+                    const t = targets[k];
+                    const score = 1 - Math.min(1, Math.abs(v - t) / (t || 1));
+                    return isFinite(score) ? score : 0.5;
+                });
+                const ph = Number(soil.pH ?? soil.ph ?? 7);
+                const phRange = targets.pH;
+                const phScore = (ph >= phRange[0] && ph <= phRange[1]) ? 1 : Math.max(0, 1 - (Math.abs((phRange[0]+phRange[1])/2 - ph) / 2));
+                // Micronutrient availability percentage average
+                const microKeys = ['Zn','Fe','Cu','Mn','B','S'];
+                const microVals = microKeys.map(k => Number(soil[k] ?? 50));
+                const microScore = microVals.length ? Math.min(1, Math.max(0, (microVals.reduce((a,b)=>a+b,0)/microVals.length)/100)) : 0.5;
+                const soilScore = 0.5 * (npkScore.reduce((a,b)=>a+b,0)/3) + 0.3 * phScore + 0.2 * microScore; // 0..1
+
+                // Weather heuristics by crop (very rough)
+                const cropOpt = {
+                    'Wheat': { t:[18,26], h:[40,70], r:[400,800] },
+                    'Rice': { t:[24,32], h:[60,90], r:[1000,2000] },
+                    'Cotton': { t:[21,30], h:[40,70], r:[500,900] },
+                    'Sugarcane': { t:[20,35], h:[50,85], r:[1200,2500] }
+                }[crop] || { t:[20,30], h:[40,80], r:[500,1000] };
+                const t = Number(weather.temperature ?? 28);
+                const h = Number(weather.humidity ?? 65);
+                const r = Number(weather.rainfall ?? 700);
+
+                const within = (v, [lo,hi]) => (v>=lo && v<=hi) ? 1 : Math.max(0, 1 - (Math.min(Math.abs(v-lo), Math.abs(v-hi)) / (hi-lo)));
+                const tScore = within(t, cropOpt.t);
+                const hScore = within(h, cropOpt.h);
+                const rScore = within(r, cropOpt.r);
+                const weatherScore = 0.5*tScore + 0.3*hScore + 0.2*rScore; // 0..1
+
+                // Combine
+                const overall = 0.6*soilScore + 0.4*weatherScore; // 0..1
+                // map to multiplier around base (±30%)
+                const multiplier = 0.7 + overall*0.6; // 0.7..1.3
+                let yieldPerAcre = Math.max(0.5, base * multiplier);
+
+                // Confidence based on data completeness and agreement
+                const completeness = [soil.N, soil.P, soil.K, soil.pH ?? soil.ph].filter(v=>typeof v!=='undefined').length / 4;
+                const agreement = Math.abs(soilScore - weatherScore) < 0.25 ? 1 : 0.7;
+                const confidence = Math.max(0.5, 0.4*completeness + 0.6*agreement);
+
+                // Irrigation recommendation
+                let irrigation = 'Maintain current schedule.';
+                if (h < 45 && r < cropOpt.r[0]) irrigation = 'Increase irrigation: low humidity and below-normal rainfall.';
+                else if (h > 85 || r > cropOpt.r[1]) irrigation = 'Reduce irrigation: high humidity/above-normal rainfall.';
+
+                // Crop alternative suggestion (simple pick best base fit)
+                const crops = ['Wheat','Rice','Cotton','Sugarcane'];
+                let best = { name: crop, score: overall };
+                crops.forEach(c => {
+                    const opt = {
+                        'Wheat': { t:[18,26], h:[40,70], r:[400,800] },
+                        'Rice': { t:[24,32], h:[60,90], r:[1000,2000] },
+                        'Cotton': { t:[21,30], h:[40,70], r:[500,900] },
+                        'Sugarcane': { t:[20,35], h:[50,85], r:[1200,2500] }
+                    }[c];
+                    const cScore = 0.6*soilScore + 0.4*(0.5*within(t,opt.t)+0.3*within(h,opt.h)+0.2*within(r,opt.r));
+                    if (cScore > best.score + 0.08) best = { name: c, score: cScore };
+                });
+                const cropRec = (best.name !== crop) ? `${best.name} (conditions slightly more favorable)` : crop;
+
+                // Drivers
+                const drivers = [];
+                if (npkScore.reduce((a,b)=>a+b,0)/3 < 0.75) drivers.push('NPK below target');
+                if (phScore < 0.8) drivers.push(`pH suboptimal (${isFinite(ph)?ph:'~'})`);
+                if (microScore < 0.7) drivers.push('Micronutrients limited');
+                if (tScore < 0.7) drivers.push(`Temperature ${t}°C`);
+                if (rScore < 0.7) drivers.push(`Rainfall ${r}mm`);
+                if (hScore < 0.7) drivers.push(`Humidity ${h}%`);
+
+                return {
+                    predicted_yield: Math.round(yieldPerAcre * size * 10)/10, // total for area
+                    irrigation_recommendation: irrigation,
+                    crop_recommendation: cropRec,
+                    explanation: `Based on soil (${(soilScore*100).toFixed(0)}%) and weather (${(weatherScore*100).toFixed(0)}%) suitability in ${location}.`,
+                    confidence,
+                    key_drivers: drivers.slice(0,4),
+                    __soilScore: soilScore,
+                    __weatherScore: weatherScore
+                };
+            };
         }
 
 // i18next integration for multilingual support
