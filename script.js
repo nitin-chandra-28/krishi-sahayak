@@ -7,6 +7,18 @@
         let mapInstance = null;
         let currentDistrict = 'Hisar';
         let lastWeatherData = null;
+        let updateIntervals = {};
+        let isDataFresh = {
+            weather: false,
+            soil: false,
+            mandi: false
+        };
+        let lastUpdateTimes = {
+            weather: null,
+            soil: null,
+            mandi: null
+        };
+        
         // District rainfall norms (approx annual mm) for variability by location
         const districtRainfallNorms = {
             Hisar: 429,
@@ -19,6 +31,95 @@
     // data readiness flags
     window.__soilReady = false;
     window.__weatherReady = false;
+    
+    // Enhanced UI Functions
+    function showToast(message, type = 'info', duration = 3000) {
+        const toast = document.createElement('div');
+        const bgColor = {
+            success: 'bg-green-500',
+            error: 'bg-red-500',
+            warning: 'bg-yellow-500',
+            info: 'bg-blue-500'
+        }[type] || 'bg-blue-500';
+        
+        toast.className = `fixed top-4 right-4 z-50 ${bgColor} text-white px-6 py-3 rounded-lg shadow-lg transform translate-x-full transition-transform duration-300 flex items-center space-x-2`;
+        toast.innerHTML = `
+            <i data-lucide="${type === 'success' ? 'check-circle' : type === 'error' ? 'x-circle' : type === 'warning' ? 'alert-triangle' : 'info'}" class="w-5 h-5"></i>
+            <span>${message}</span>
+        `;
+        
+        document.body.appendChild(toast);
+        lucide.createIcons();
+        
+        // Slide in
+        setTimeout(() => toast.classList.remove('translate-x-full'), 100);
+        
+        // Slide out and remove
+        setTimeout(() => {
+            toast.classList.add('translate-x-full');
+            setTimeout(() => document.body.removeChild(toast), 300);
+        }, duration);
+    }
+    
+    function addLoadingSpinner(element) {
+        if (!element) return;
+        element.classList.add('pulse');
+        const spinner = element.querySelector('.loading-spinner');
+        if (!spinner) {
+            const spinnerDiv = document.createElement('div');
+            spinnerDiv.className = 'loading-spinner absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-gray-800/80 rounded-lg';
+            spinnerDiv.innerHTML = '<div class="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full"></div>';
+            element.style.position = 'relative';
+            element.appendChild(spinnerDiv);
+        }
+    }
+    
+    function removeLoadingSpinner(element) {
+        if (!element) return;
+        element.classList.remove('pulse');
+        const spinner = element.querySelector('.loading-spinner');
+        if (spinner) {
+            spinner.remove();
+        }
+    }
+    
+    function updateDataFreshness(dataType) {
+        isDataFresh[dataType] = true;
+        lastUpdateTimes[dataType] = new Date();
+        
+        // Add fresh data indicator
+        const indicators = document.querySelectorAll(`[data-freshness="${dataType}"]`);
+        indicators.forEach(indicator => {
+            indicator.classList.add('data-fresh');
+            setTimeout(() => indicator.classList.remove('data-fresh'), 3000);
+        });
+        
+        // Show success toast
+        showToast(`${dataType.charAt(0).toUpperCase() + dataType.slice(1)} data updated`, 'success', 2000);
+    }
+    
+    function animateValue(element, start, end, duration = 1000) {
+        if (!element) return;
+        const range = end - start;
+        const increment = range / (duration / 16);
+        let current = start;
+        
+        const timer = setInterval(() => {
+            current += increment;
+            if ((increment > 0 && current >= end) || (increment < 0 && current <= end)) {
+                current = end;
+                clearInterval(timer);
+            }
+            
+            if (element.textContent.includes('°C')) {
+                element.textContent = `${Math.round(current)}°C`;
+            } else if (element.textContent.includes('%')) {
+                element.textContent = `${Math.round(current)}%`;
+            } else {
+                element.textContent = Math.round(current).toString();
+            }
+        }, 16);
+    }
         
         // --- Page Navigation ---
         function navigateToPage(pageId) {
@@ -67,6 +168,7 @@
             const ctx = document.getElementById('yieldChart').getContext('2d');
             if (yieldChartInstance) yieldChartInstance.destroy();
             Chart.defaults.color = document.documentElement.classList.contains('dark') ? '#e5e7eb' : '#374151';
+            
             yieldChartInstance = new Chart(ctx, {
                 type: 'bar',
                 data: {
@@ -76,13 +178,187 @@
                         data: [45.5, 38, 35],
                         backgroundColor: ['rgba(34, 197, 94, 0.6)','rgba(59, 130, 246, 0.6)','rgba(249, 115, 22, 0.6)'],
                         borderColor: ['rgba(22, 163, 74, 1)','rgba(37, 99, 235, 1)','rgba(234, 88, 12, 1)'],
-                        borderWidth: 1
+                        borderWidth: 2,
+                        borderRadius: 4,
+                        borderSkipped: false,
                     }]
                 },
                 options: {
                     responsive: true,
-                    plugins: { legend: { display: false }, title: { display: true, text: 'Yield Comparison' } },
-                    scales: { y: { beginAtZero: true } }
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: { 
+                        legend: { 
+                            display: false 
+                        }, 
+                        title: { 
+                            display: true, 
+                            text: 'Yield Comparison',
+                            font: { size: 16, weight: 'bold' }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            titleColor: '#fff',
+                            bodyColor: '#fff',
+                            borderColor: '#374151',
+                            borderWidth: 1,
+                            callbacks: {
+                                afterLabel: function(context) {
+                                    const tips = [
+                                        'Based on your field conditions and inputs',
+                                        'Average for your district this season',
+                                        'State-wide average yield'
+                                    ];
+                                    return tips[context.dataIndex] || '';
+                                }
+                            }
+                        }
+                    },
+                    scales: { 
+                        y: { 
+                            beginAtZero: true,
+                            grid: {
+                                color: document.documentElement.classList.contains('dark') ? '#374151' : '#e5e7eb'
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            }
+                        }
+                    },
+                    animation: {
+                        duration: 1500,
+                        easing: 'easeOutBounce'
+                    },
+                    onHover: (event, elements) => {
+                        event.native.target.style.cursor = elements.length > 0 ? 'pointer' : 'default';
+                    },
+                    onClick: (event, elements) => {
+                        if (elements.length > 0) {
+                            const index = elements[0].index;
+                            const labels = ['Your Field', 'District Average', 'State Average'];
+                            showToast(`Clicked on ${labels[index]}`, 'info', 2000);
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Create interactive soil nutrient chart
+        function createSoilNutrientChart() {
+            const chartContainer = document.querySelector('.dashboard-card.card-2');
+            if (!chartContainer || chartContainer.querySelector('.soil-chart-container')) return;
+            
+            const chartDiv = document.createElement('div');
+            chartDiv.className = 'soil-chart-container mt-4 hidden';
+            chartDiv.innerHTML = `
+                <div class="flex justify-between items-center mb-2">
+                    <h4 class="text-sm font-medium">Nutrient Analysis</h4>
+                    <button class="toggle-chart-btn text-xs text-blue-600 dark:text-blue-400 hover:underline">Show Chart</button>
+                </div>
+                <canvas id="soilChart" width="300" height="200"></canvas>
+            `;
+            
+            chartContainer.appendChild(chartDiv);
+            
+            const toggleBtn = chartDiv.querySelector('.toggle-chart-btn');
+            const canvas = chartDiv.querySelector('#soilChart');
+            
+            toggleBtn.addEventListener('click', () => {
+                if (chartDiv.classList.contains('hidden')) {
+                    chartDiv.classList.remove('hidden');
+                    toggleBtn.textContent = 'Hide Chart';
+                    renderSoilChart();
+                } else {
+                    chartDiv.classList.add('hidden');
+                    toggleBtn.textContent = 'Show Chart';
+                }
+            });
+        }
+        
+        function renderSoilChart() {
+            const canvas = document.getElementById('soilChart');
+            if (!canvas) return;
+            
+            const ctx = canvas.getContext('2d');
+            const dataset = (typeof districtSoilData !== 'undefined') ? districtSoilData : (typeof window.districtSoilData !== 'undefined' ? window.districtSoilData : undefined);
+            const soilData = dataset ? dataset[currentDistrict] : { Zn: 50, Fe: 50, Cu: 50, Mn: 50, B: 50, S: 50 };
+            
+            const nutrients = Object.keys(soilData);
+            const values = Object.values(soilData).map(v => typeof v === 'number' ? v : 50);
+            
+            new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: nutrients,
+                    datasets: [{
+                        label: 'Current Levels (%)',
+                        data: values,
+                        backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                        borderColor: 'rgba(34, 197, 94, 1)',
+                        borderWidth: 2,
+                        pointBackgroundColor: 'rgba(34, 197, 94, 1)',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        pointRadius: 4,
+                        pointHoverRadius: 6
+                    }, {
+                        label: 'Optimal Range',
+                        data: nutrients.map(() => 80), // Optimal range indicator
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderColor: 'rgba(59, 130, 246, 0.5)',
+                        borderWidth: 1,
+                        borderDash: [5, 5],
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                font: { size: 11 }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                afterLabel: function(context) {
+                                    const nutrient = context.label;
+                                    const tips = {
+                                        'Zn': 'Zinc - Essential for enzyme function',
+                                        'Fe': 'Iron - Critical for chlorophyll synthesis',
+                                        'Cu': 'Copper - Important for photosynthesis',
+                                        'Mn': 'Manganese - Aids in nutrient uptake',
+                                        'B': 'Boron - Necessary for cell wall formation',
+                                        'S': 'Sulfur - Key component of proteins'
+                                    };
+                                    return tips[nutrient] || '';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        r: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: {
+                                stepSize: 20,
+                                font: { size: 10 }
+                            },
+                            grid: {
+                                color: document.documentElement.classList.contains('dark') ? '#374151' : '#e5e7eb'
+                            }
+                        }
+                    },
+                    animation: {
+                        duration: 1000,
+                        easing: 'easeOutQuart'
+                    }
                 }
             });
         }
@@ -164,9 +440,13 @@
             }
         }
 
-        function updateWeatherUI(lat, lon) {
+        function updateWeatherUI(lat, lon, showAnimation = true) {
             const apiKey = "9505fd1df737e20152fbd78cdb289b6a"; // Note: This key is public for demo purposes.
             const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&appid=${apiKey}`;
+            
+            // Add loading spinner to weather card
+            const weatherCard = document.querySelector('.dashboard-card.card-1');
+            if (showAnimation) addLoadingSpinner(weatherCard);
             
             fetch(url)
                 .then(res => {
@@ -180,6 +460,8 @@
                     // crude rainfall estimate from current conditions (for variability demo)
                     const conditionRainMap = { 'Thunderstorm': 20, 'Drizzle': 5, 'Rain': 15, 'Snow': 10, 'Clouds': 2, 'Clear': 0 };
                     const estRain = conditionRainMap[condition] ?? 1;
+                    
+                    const oldTemp = lastWeatherData?.tempC || temp;
                     lastWeatherData = {
                         city,
                         tempC: temp,
@@ -189,9 +471,23 @@
                         rainfall: estRain * 30 // approx monthly mm proxy to drive variability
                     };
 
-                    // Update Dashboard Card
-                    document.getElementById('dashboard-temp').textContent = `${temp}°C`;
-                    document.getElementById('dashboard-condition').textContent = condition;
+                    // Update Dashboard Card with animations
+                    const tempElement = document.getElementById('dashboard-temp');
+                    if (showAnimation && tempElement) {
+                        animateValue(tempElement, oldTemp, temp);
+                    } else if (tempElement) {
+                        tempElement.textContent = `${temp}°C`;
+                    }
+                    
+                    const conditionElement = document.getElementById('dashboard-condition');
+                    if (conditionElement) {
+                        if (showAnimation) {
+                            conditionElement.classList.add('fade-in');
+                            setTimeout(() => conditionElement.classList.remove('fade-in'), 500);
+                        }
+                        conditionElement.textContent = condition;
+                    }
+                    
                     document.getElementById('dashboard-humidity').innerHTML = `<i data-lucide="droplets" class="w-4 h-4 mr-2"></i> ${data.main.humidity}%`;
                     document.getElementById('dashboard-wind').innerHTML = `<i data-lucide="wind" class="w-4 h-4 mr-2"></i> ${lastWeatherData.windKmh} km/h`;
 
@@ -211,80 +507,221 @@
                     lucide.createIcons();
                     // mark weather ready for predictions
                     window.__weatherReady = true;
+                    
+                    // Remove loading spinner and update freshness
+                    if (showAnimation) {
+                        removeLoadingSpinner(weatherCard);
+                        updateDataFreshness('weather');
+                        
+                        // Add bounce animation to weather card
+                        weatherCard?.classList.add('bounce');
+                        setTimeout(() => weatherCard?.classList.remove('bounce'), 1000);
+                    }
+                    
                     try { if (typeof updatePredictionReadiness === 'function') updatePredictionReadiness(); } catch(_) {}
                 })
-                .catch(err => console.error("Weather API error:", err));
+                .catch(err => {
+                    console.error("Weather API error:", err);
+                    if (showAnimation) {
+                        removeLoadingSpinner(weatherCard);
+                        showToast('Failed to update weather data', 'error');
+                    }
+                });
         }
         
-        function fetchSoilData() {
+        function fetchSoilData(showAnimation = true) {
             const soilDataContent = document.getElementById('soil-data-content');
             const soilDataLoading = document.getElementById('soil-data-loading');
             const soilDataError = document.getElementById('soil-data-error');
+            const soilCard = document.querySelector('.dashboard-card.card-2');
             
+            console.log('fetchSoilData called with showAnimation:', showAnimation);
+            
+            // Ensure elements exist
+            if (!soilDataContent || !soilDataLoading) {
+                console.error('Soil data elements not found');
+                return;
+            }
+            
+            if (showAnimation && soilCard) addLoadingSpinner(soilCard);
+            
+            // Show loading state
             soilDataLoading.classList.remove('hidden');
             soilDataContent.classList.add('hidden');
-            soilDataError.classList.add('hidden');
-            document.getElementById('advisory-message').innerHTML = `Analyzing farm data...`;
+            if (soilDataError) soilDataError.classList.add('hidden');
+            
+            const advisoryMsg = document.getElementById('advisory-message');
+            if (advisoryMsg) advisoryMsg.innerHTML = 'Analyzing farm data...';
 
-            // Prefer dataset if available; fallback to mock sensor demo
+            // Check if dataset is available
             const useDataset = (typeof districtSoilData !== 'undefined') || (typeof window.districtSoilData !== 'undefined');
+            console.log('Using dataset:', useDataset, 'Current district:', currentDistrict);
 
             if (useDataset) {
                 setTimeout(() => {
-                    renderSoilDataset(currentDistrict);
-                    soilDataLoading.classList.add('hidden');
-                    soilDataContent.classList.remove('hidden');
-                    document.getElementById('advisory-message').innerHTML = `Loading AI advisory...`;
-                    window.__soilReady = true;
-                    // Compose minimal soil summary from dataset row
-                    const dataset = (typeof districtSoilData !== 'undefined') ? districtSoilData : (typeof window.districtSoilData !== 'undefined' ? window.districtSoilData : undefined);
-                    const row = dataset ? dataset[currentDistrict] : null;
-                    const soilSummary = row || {};
-                    generateSmartAdvisory(soilSummary, lastWeatherData);
-                    renderAdvisoryVisual('Maintain regular irrigation and monitor for pests.', soilSummary);
-                    lucide.createIcons();
-                    try { if (typeof updatePredictionReadiness === 'function') updatePredictionReadiness(); } catch(_) {}
-                }, 800);
+                    try {
+                        console.log('Rendering soil dataset for district:', currentDistrict);
+                        renderSoilDataset(currentDistrict, showAnimation);
+                        
+                        // Hide loading, show content
+                        soilDataLoading.classList.add('hidden');
+                        soilDataContent.classList.remove('hidden');
+                        
+                        if (showAnimation) {
+                            soilDataContent.classList.add('slide-in-up');
+                            setTimeout(() => soilDataContent.classList.remove('slide-in-up'), 600);
+                        }
+                        
+                        if (advisoryMsg) advisoryMsg.innerHTML = 'Loading AI advisory...';
+                        window.__soilReady = true;
+                        
+                        // Generate advisory
+                        const dataset = (typeof districtSoilData !== 'undefined') ? districtSoilData : window.districtSoilData;
+                        const row = dataset ? dataset[currentDistrict] : null;
+                        const soilSummary = row || {};
+                        
+                        generateSmartAdvisory(soilSummary, lastWeatherData);
+                        renderAdvisoryVisual('Maintain regular irrigation and monitor for pests.', soilSummary);
+                        lucide.createIcons();
+                        
+                        if (showAnimation && soilCard) {
+                            removeLoadingSpinner(soilCard);
+                            updateDataFreshness('soil');
+                            
+                            // Add bounce animation to soil card
+                            soilCard.classList.add('bounce');
+                            setTimeout(() => soilCard.classList.remove('bounce'), 1000);
+                        }
+                        
+                        console.log('Soil data rendering completed successfully');
+                        
+                        try { if (typeof updatePredictionReadiness === 'function') updatePredictionReadiness(); } catch(_) {}
+                    } catch (error) {
+                        console.error('Error rendering soil dataset:', error);
+                        // Show error state
+                        soilDataLoading.classList.add('hidden');
+                        if (soilDataError) {
+                            soilDataError.classList.remove('hidden');
+                        } else {
+                            soilDataContent.innerHTML = '<p class="text-center text-red-600 dark:text-red-400">Error loading soil data</p>';
+                            soilDataContent.classList.remove('hidden');
+                        }
+                        if (showAnimation && soilCard) removeLoadingSpinner(soilCard);
+                    }
+                }, showAnimation ? 800 : 100);
             } else {
+                // Fallback to mock data
                 setTimeout(() => {
-                    const data = { moisture: 45, ph: 6.8, nitrogen: 120, phosphorus: 55, potassium: 150 };
-                    const renderSoilProgress = (label, value, percent, unit = '') => {
-                        const isDark = document.documentElement.classList.contains('dark');
-                        const bgColor = isDark ? 'bg-green-700' : 'bg-green-500';
-                        return `<div><div class="flex justify-between items-center mb-1 text-sm"><span class="text-gray-600 dark:text-gray-300">${label}</span><span class="font-semibold">${value}${unit}</span></div><div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2"><div class="${bgColor} h-2 rounded-full" style="width: ${percent}%"></div></div></div>`;
-                    };
-                    soilDataContent.innerHTML = renderSoilProgress('Moisture', data.moisture, data.moisture, '%') +
-                                                renderSoilProgress('pH Level', data.ph, (data.ph / 14) * 100) +
-                                                renderSoilProgress('Nitrogen (N)', data.nitrogen, (data.nitrogen / 200) * 100, ' ppm') +
-                                                renderSoilProgress('Phosphorus (P)', data.phosphorus, (data.phosphorus / 100) * 100, ' ppm') +
-                                                renderSoilProgress('Potassium (K)', data.potassium, (data.potassium / 250) * 100, ' ppm');
-                    soilDataLoading.classList.add('hidden');
-                    soilDataContent.classList.remove('hidden');
-                    const fakeWeatherData = { forecast: 'clear', nextRainDays: 5 };
-                    generateSmartAdvisory(data, fakeWeatherData);
-                    lucide.createIcons();
-                    window.__soilReady = true;
-                    try { if (typeof updatePredictionReadiness === 'function') updatePredictionReadiness(); } catch(_) {}
-                }, 2500);
+                    try {
+                        const data = { moisture: 45, ph: 6.8, nitrogen: 120, phosphorus: 55, potassium: 150 };
+                        const renderSoilProgress = (label, value, percent, unit = '') => {
+                            const isDark = document.documentElement.classList.contains('dark');
+                            const bgColor = isDark ? 'bg-green-700' : 'bg-green-500';
+                            return `<div><div class="flex justify-between items-center mb-1 text-sm"><span class="text-gray-600 dark:text-gray-300">${label}</span><span class="font-semibold">${value}${unit}</span></div><div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 progress-bar"><div class="progress-fill ${bgColor} h-2 rounded-full" style="width: ${percent}%"></div></div></div>`;
+                        };
+                        
+                        soilDataContent.innerHTML = renderSoilProgress('Moisture', data.moisture, data.moisture, '%') +
+                                                    renderSoilProgress('pH Level', data.ph, (data.ph / 14) * 100) +
+                                                    renderSoilProgress('Nitrogen (N)', data.nitrogen, (data.nitrogen / 200) * 100, ' ppm') +
+                                                    renderSoilProgress('Phosphorus (P)', data.phosphorus, (data.phosphorus / 100) * 100, ' ppm') +
+                                                    renderSoilProgress('Potassium (K)', data.potassium, (data.potassium / 250) * 100, ' ppm');
+                        
+                        soilDataLoading.classList.add('hidden');
+                        soilDataContent.classList.remove('hidden');
+                        
+                        if (showAnimation && soilCard) {
+                            removeLoadingSpinner(soilCard);
+                            updateDataFreshness('soil');
+                        }
+                        
+                        const fakeWeatherData = { forecast: 'clear', nextRainDays: 5 };
+                        generateSmartAdvisory(data, fakeWeatherData);
+                        lucide.createIcons();
+                        window.__soilReady = true;
+                        
+                        console.log('Fallback soil data rendered successfully');
+                        
+                        try { if (typeof updatePredictionReadiness === 'function') updatePredictionReadiness(); } catch(_) {}
+                    } catch (error) {
+                        console.error('Error rendering fallback soil data:', error);
+                        soilDataLoading.classList.add('hidden');
+                        soilDataContent.innerHTML = '<p class="text-center text-red-600 dark:text-red-400">Error loading soil data</p>';
+                        soilDataContent.classList.remove('hidden');
+                        if (showAnimation && soilCard) removeLoadingSpinner(soilCard);
+                    }
+                }, showAnimation ? 2500 : 100);
             }
         }
 
         // Render soil progress bars from district dataset
-        function renderSoilDataset(districtName) {
+        function renderSoilDataset(districtName, showAnimation = false) {
             const soilDataContent = document.getElementById('soil-data-content');
             const dataset = (typeof districtSoilData !== 'undefined') ? districtSoilData : (typeof window.districtSoilData !== 'undefined' ? window.districtSoilData : undefined);
-            if (!soilDataContent || !dataset) return;
-            const dataForDistrict = dataset[districtName] || dataset['Hisar'];
-            if (!dataForDistrict) return;
+            
+            console.log('renderSoilDataset called:', { districtName, showAnimation, dataset: !!dataset, soilDataContent: !!soilDataContent });
+            
+            if (!soilDataContent) {
+                console.error('soilDataContent element not found');
+                return;
+            }
+            
+            if (!dataset) {
+                console.error('No soil dataset available');
+                soilDataContent.innerHTML = '<p class="text-center text-gray-500">No soil data available</p>';
+                return;
+            }
+            
+            const dataForDistrict = dataset[districtName] || dataset['Hisar'] || {};
+            console.log('Data for district:', districtName, dataForDistrict);
+            
+            if (!dataForDistrict || Object.keys(dataForDistrict).length === 0) {
+                console.error('No data found for district:', districtName);
+                soilDataContent.innerHTML = '<p class="text-center text-gray-500">No data available for this district</p>';
+                return;
+            }
+            
             const isDark = document.documentElement.classList.contains('dark');
             const bgColor = isDark ? 'bg-green-700' : 'bg-green-500';
+            
             const rows = Object.entries(dataForDistrict).map(([label, value]) => {
                 const isNA = value === 'N/A' || value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
                 const percent = isNA ? 0 : Number(value);
-                const displayValue = isNA ? 'N/A' : `${percent.toFixed(2)}%`;
-                return `<div><div class="flex justify-between items-center mb-1 text-sm"><span class="text-gray-600 dark:text-gray-300">${label}</span><span class="font-semibold">${displayValue}</span></div><div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2"><div class="${bgColor} h-2 rounded-full" style="width: ${Math.max(0, Math.min(100, percent))}%"></div></div></div>`;
+                const displayValue = isNA ? 'N/A' : `${percent.toFixed(1)}%`;
+                const widthPercent = Math.max(0, Math.min(100, percent));
+                
+                return `<div class="soil-progress-item mb-3">
+                    <div class="flex justify-between items-center mb-1 text-sm">
+                        <span class="text-gray-600 dark:text-gray-300 font-medium">${label}</span>
+                        <span class="font-semibold counter text-gray-800 dark:text-gray-200">${displayValue}</span>
+                    </div>
+                    <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 progress-bar overflow-hidden">
+                        <div class="progress-fill ${bgColor} h-2 rounded-full transition-all duration-1000 ease-out" 
+                             style="width: ${showAnimation ? 0 : widthPercent}%" 
+                             data-target="${widthPercent}">
+                        </div>
+                    </div>
+                </div>`;
             });
+            
             soilDataContent.innerHTML = rows.join('');
+            console.log('Soil data HTML rendered, element count:', soilDataContent.children.length);
+            
+            // Animate progress bars if requested
+            if (showAnimation) {
+                console.log('Starting animation for progress bars');
+                setTimeout(() => {
+                    const progressBars = soilDataContent.querySelectorAll('.progress-fill');
+                    console.log('Found progress bars:', progressBars.length);
+                    
+                    progressBars.forEach((bar, index) => {
+                        const target = parseFloat(bar.dataset.target);
+                        setTimeout(() => {
+                            bar.style.width = target + '%';
+                            console.log(`Animating bar ${index} to ${target}%`);
+                        }, index * 100);
+                    });
+                }, 100);
+            }
         }
 
         // --- Initialization on Load ---
@@ -326,7 +763,13 @@
             // Auto-restore session
             try {
                 const saved = JSON.parse(localStorage.getItem('ks_user'));
-                if (saved && saved.name) setSession(saved);
+                if (saved && saved.name) {
+                    setSession(saved);
+                    // If a prior session exists, hide the modal so user isn't blocked
+                    if (loginModal && !loginModal.classList.contains('hidden')) {
+                        loginModal.classList.add('hidden');
+                    }
+                }
             } catch (_) {}
 
             // Handle login
@@ -342,6 +785,15 @@
                     alert('Invalid credentials. Try farmer@example.com / demo123');
                 }
             });
+            // Submit on Enter key inside modal inputs
+            try {
+                loginModal.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        loginButton.click();
+                    }
+                });
+            } catch(_) {}
             // Logout
             if (logoutButton) {
                 logoutButton.addEventListener('click', () => {
@@ -392,6 +844,20 @@
             // --- Initial Setup ---
             lucide.createIcons();
             navigateToPage('dashboard-page');
+            
+            // Verify soil dataset is loaded
+            const datasetAvailable = (typeof districtSoilData !== 'undefined') || (typeof window.districtSoilData !== 'undefined');
+            console.log('Dataset check at initialization:', {
+                districtSoilData: typeof districtSoilData,
+                windowDistrictSoilData: typeof window.districtSoilData,
+                available: datasetAvailable,
+                currentDistrict: currentDistrict
+            });
+            
+            if (datasetAvailable) {
+                const dataset = (typeof districtSoilData !== 'undefined') ? districtSoilData : window.districtSoilData;
+                console.log('Available districts:', Object.keys(dataset).slice(0, 10));
+            }
             
             // --- GPS Button Logic ---
             const gpsButton = document.getElementById('gps-button');
@@ -449,7 +915,48 @@
             }
 
             // --- Fetch dynamic data ---
+            console.log('Starting initial data fetch...');
             fetchSoilData();
+            
+            // Verify soil data is available
+            setTimeout(() => {
+                const soilContent = document.getElementById('soil-data-content');
+                console.log('Soil content after initial fetch:', {
+                    element: !!soilContent,
+                    hidden: soilContent?.classList.contains('hidden'),
+                    innerHTML: soilContent?.innerHTML.length > 0 ? 'Has content' : 'Empty',
+                    districtSoilData: typeof districtSoilData !== 'undefined',
+                    windowDistrictSoilData: typeof window.districtSoilData !== 'undefined'
+                });
+            }, 2000);
+            
+            // Set up auto-refresh intervals
+            updateIntervals.weather = setInterval(() => {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                        (pos) => updateWeatherUI(pos.coords.latitude, pos.coords.longitude, true),
+                        () => updateWeatherUI(29.1492, 75.7217, true) // Fallback
+                    );
+                } else {
+                    updateWeatherUI(29.1492, 75.7217, true);
+                }
+            }, 300000); // Update every 5 minutes
+            
+            updateIntervals.soil = setInterval(() => {
+                fetchSoilData(true);
+            }, 600000); // Update every 10 minutes
+            
+            // Add refresh buttons to cards
+            addRefreshButtons();
+            
+            // Add data freshness indicators
+            addDataFreshnessIndicators();
+            
+            // Create interactive soil chart
+            setTimeout(() => {
+                createSoilNutrientChart();
+                lucide.createIcons();
+            }, 1000);
 
             // --- Urgent Alert Simulation ---
             const alertBanner = document.getElementById('urgent-alert');
@@ -735,6 +1242,376 @@
                     renderAdvisoryVisual('Maintain regular irrigation and monitor for pests.', row);
                 });
             }
+            
+            // --- Enhanced User Interactions ---
+            // Add keyboard shortcuts
+            document.addEventListener('keydown', (e) => {
+                if (e.ctrlKey || e.metaKey) {
+                    switch(e.key) {
+                        case '1':
+                            e.preventDefault();
+                            navigateToPage('dashboard-page');
+                            showToast('Navigated to Dashboard', 'info', 1500);
+                            break;
+                        case '2':
+                            e.preventDefault();
+                            navigateToPage('weather-page');
+                            showToast('Navigated to Weather', 'info', 1500);
+                            break;
+                        case '3':
+                            e.preventDefault();
+                            navigateToPage('prediction-page');
+                            showToast('Navigated to Crop Yield', 'info', 1500);
+                            break;
+                        case 'r':
+                            e.preventDefault();
+                            // Refresh current page data
+                            fetchSoilData(true);
+                            if (navigator.geolocation) {
+                                navigator.geolocation.getCurrentPosition(
+                                    (pos) => updateWeatherUI(pos.coords.latitude, pos.coords.longitude, true),
+                                    () => updateWeatherUI(29.1492, 75.7217, true)
+                                );
+                            }
+                            showToast('Refreshing data...', 'info', 1500);
+                            break;
+                    }
+                }
+            });
+            
+            // Add tooltips to interactive elements
+            addTooltips();
+            
+            // Add click feedback to cards
+            document.querySelectorAll('.dashboard-card').forEach(card => {
+                card.addEventListener('click', (e) => {
+                    if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'SELECT') {
+                        card.classList.add('scale-95');
+                        setTimeout(() => card.classList.remove('scale-95'), 150);
+                    }
+                });
+            });
+            
+            // Enhanced button interactions
+            document.querySelectorAll('.interactive-btn').forEach(btn => {
+                btn.addEventListener('mouseenter', () => {
+                    btn.style.transform = 'translateY(-2px)';
+                });
+                btn.addEventListener('mouseleave', () => {
+                    btn.style.transform = 'translateY(0)';
+                });
+            });
+            
+            // Add expandable content functionality
+            addExpandableContent();
+            
+            // Add card minimize/maximize functionality  
+            addCardControls();
+            
+            // Add dashboard customization
+            addDashboardCustomization();
+        });
+        
+        function addExpandableContent() {
+            // Handle expand buttons
+            document.querySelectorAll('.expand-forecast-btn, .expand-prices-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const targetId = btn.dataset.target;
+                    const target = document.getElementById(targetId);
+                    
+                    if (target) {
+                        if (target.classList.contains('hidden')) {
+                            target.classList.remove('hidden');
+                            target.classList.add('slide-in-up');
+                            btn.textContent = btn.textContent.replace('Show', 'Hide');
+                        } else {
+                            target.classList.add('hidden');
+                            target.classList.remove('slide-in-up');
+                            btn.textContent = btn.textContent.replace('Hide', 'Show');
+                        }
+                    }
+                });
+            });
+        }
+        
+        function addCardControls() {
+            document.querySelectorAll('.minimize-card').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    const card = btn.closest('.dashboard-card');
+                    if (card) {
+                        const content = card.querySelector('.card-content') || 
+                                       card.children[1] || 
+                                       Array.from(card.children).slice(1);
+                        
+                        if (Array.isArray(content)) {
+                            content.forEach(el => {
+                                if (el.classList.contains('hidden')) {
+                                    el.classList.remove('hidden');
+                                    el.classList.add('fade-in');
+                                } else {
+                                    el.classList.add('hidden');
+                                    el.classList.remove('fade-in');
+                                }
+                            });
+                        } else if (content) {
+                            if (content.classList.contains('hidden')) {
+                                content.classList.remove('hidden');
+                                content.classList.add('fade-in');
+                            } else {
+                                content.classList.add('hidden');
+                                content.classList.remove('fade-in');
+                            }
+                        }
+                        
+                        // Toggle icon
+                        const icon = btn.querySelector('i');
+                        if (icon) {
+                            if (icon.classList.contains('lucide-minus')) {
+                                icon.className = icon.className.replace('lucide-minus', 'lucide-plus');
+                                btn.title = 'Expand card';
+                            } else {
+                                icon.className = icon.className.replace('lucide-plus', 'lucide-minus');
+                                btn.title = 'Minimize card';
+                            }
+                            lucide.createIcons();
+                        }
+                        
+                        // Add bounce effect
+                        card.classList.add('bounce');
+                        setTimeout(() => card.classList.remove('bounce'), 500);
+                    }
+                });
+            });
+        }
+        
+        function addDashboardCustomization() {
+            const customizeBtn = document.getElementById('customize-dashboard');
+            if (customizeBtn) {
+                customizeBtn.addEventListener('click', () => {
+                    showCustomizationModal();
+                });
+            }
+        }
+        
+        function showCustomizationModal() {
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4';
+            modal.innerHTML = `
+                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold">Customize Dashboard</h3>
+                        <button class="close-modal p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Card Layout</label>
+                            <select id="layout-select" class="w-full p-2 border dark:border-gray-600 dark:bg-gray-700 rounded">
+                                <option value="grid">Grid Layout (default)</option>
+                                <option value="list">List Layout</option>
+                                <option value="compact">Compact View</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Auto-refresh Interval</label>
+                            <select id="refresh-interval" class="w-full p-2 border dark:border-gray-600 dark:bg-gray-700 rounded">
+                                <option value="300000">5 minutes</option>
+                                <option value="600000">10 minutes</option>
+                                <option value="1800000">30 minutes</option>
+                                <option value="0">Disable</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="flex items-center space-x-2">
+                                <input type="checkbox" id="enable-animations" checked class="rounded">
+                                <span class="text-sm">Enable animations</span>
+                            </label>
+                        </div>
+                        <div>
+                            <label class="flex items-center space-x-2">
+                                <input type="checkbox" id="show-tooltips" checked class="rounded">
+                                <span class="text-sm">Show tooltips</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="flex justify-end space-x-2 mt-6">
+                        <button class="close-modal px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">Cancel</button>
+                        <button class="save-settings px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            lucide.createIcons();
+            
+            // Handle modal close
+            modal.querySelectorAll('.close-modal').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.body.removeChild(modal);
+                });
+            });
+            
+            // Handle save
+            modal.querySelector('.save-settings').addEventListener('click', () => {
+                const layout = modal.querySelector('#layout-select').value;
+                const refreshInterval = parseInt(modal.querySelector('#refresh-interval').value);
+                const animations = modal.querySelector('#enable-animations').checked;
+                const tooltips = modal.querySelector('#show-tooltips').checked;
+                
+                // Apply settings
+                applyDashboardSettings({ layout, refreshInterval, animations, tooltips });
+                
+                // Save to localStorage
+                localStorage.setItem('dashboardSettings', JSON.stringify({ layout, refreshInterval, animations, tooltips }));
+                
+                showToast('Dashboard settings saved!', 'success');
+                document.body.removeChild(modal);
+            });
+            
+            // Load existing settings
+            const saved = localStorage.getItem('dashboardSettings');
+            if (saved) {
+                const settings = JSON.parse(saved);
+                modal.querySelector('#layout-select').value = settings.layout || 'grid';
+                modal.querySelector('#refresh-interval').value = settings.refreshInterval || 300000;
+                modal.querySelector('#enable-animations').checked = settings.animations !== false;
+                modal.querySelector('#show-tooltips').checked = settings.tooltips !== false;
+            }
+        }
+        
+        function applyDashboardSettings(settings) {
+            const dashboard = document.querySelector('#dashboard-page .grid');
+            if (!dashboard) return;
+            
+            // Apply layout
+            dashboard.className = dashboard.className.replace(/grid-cols-\d+/g, '');
+            switch(settings.layout) {
+                case 'list':
+                    dashboard.classList.add('grid-cols-1');
+                    break;
+                case 'compact':
+                    dashboard.classList.add('grid-cols-1', 'md:grid-cols-3', 'xl:grid-cols-4');
+                    break;
+                default:
+                    dashboard.classList.add('grid-cols-1', 'md:grid-cols-2', 'xl:grid-cols-3');
+            }
+            
+            // Update refresh intervals
+            if (settings.refreshInterval > 0) {
+                Object.values(updateIntervals).forEach(interval => clearInterval(interval));
+                
+                updateIntervals.weather = setInterval(() => {
+                    if (navigator.geolocation) {
+                        navigator.geolocation.getCurrentPosition(
+                            (pos) => updateWeatherUI(pos.coords.latitude, pos.coords.longitude, settings.animations),
+                            () => updateWeatherUI(29.1492, 75.7217, settings.animations)
+                        );
+                    }
+                }, settings.refreshInterval);
+                
+                updateIntervals.soil = setInterval(() => {
+                    fetchSoilData(settings.animations);
+                }, settings.refreshInterval * 2);
+            } else {
+                Object.values(updateIntervals).forEach(interval => clearInterval(interval));
+            }
+            
+            // Apply animation preferences
+            if (!settings.animations) {
+                document.body.classList.add('no-animations');
+            } else {
+                document.body.classList.remove('no-animations');
+            }
+            
+            // Apply tooltip preferences
+            if (!settings.tooltips) {
+                document.querySelectorAll('[title]').forEach(el => {
+                    el.setAttribute('data-original-title', el.title);
+                    el.removeAttribute('title');
+                });
+            } else {
+                document.querySelectorAll('[data-original-title]').forEach(el => {
+                    el.setAttribute('title', el.getAttribute('data-original-title'));
+                    el.removeAttribute('data-original-title');
+                });
+            }
+        }
+        
+        function addTooltips() {
+            const tooltipElements = [
+                { selector: '[data-freshness="weather"]', text: 'Weather data - Click to refresh' },
+                { selector: '[data-freshness="soil"]', text: 'Soil sensor data - Auto-updates every 10 minutes' },
+                { selector: '.dashboard-card.card-3', text: 'Market prices - Updated daily' },
+                { selector: '.float', text: 'Live weather conditions' }
+            ];
+            
+            tooltipElements.forEach(({selector, text}) => {
+                const elements = document.querySelectorAll(selector);
+                elements.forEach(el => {
+                    el.title = text;
+                    el.style.cursor = 'help';
+                });
+            });
+        }
+        
+        function addRefreshButtons() {
+            // Add refresh button to weather card
+            const weatherCard = document.querySelector('.dashboard-card.card-1 h2');
+            if (weatherCard && !weatherCard.querySelector('.refresh-btn')) {
+                const refreshBtn = document.createElement('button');
+                refreshBtn.className = 'refresh-btn ml-2 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors';
+                refreshBtn.innerHTML = '<i data-lucide="refresh-cw" class="w-4 h-4"></i>';
+                refreshBtn.onclick = () => {
+                    refreshBtn.classList.add('animate-spin');
+                    if (navigator.geolocation) {
+                        navigator.geolocation.getCurrentPosition(
+                            (pos) => {
+                                updateWeatherUI(pos.coords.latitude, pos.coords.longitude, true);
+                                setTimeout(() => refreshBtn.classList.remove('animate-spin'), 1000);
+                            },
+                            () => {
+                                updateWeatherUI(29.1492, 75.7217, true);
+                                setTimeout(() => refreshBtn.classList.remove('animate-spin'), 1000);
+                            }
+                        );
+                    }
+                };
+                weatherCard.appendChild(refreshBtn);
+                lucide.createIcons();
+            }
+            
+            // Add refresh button to soil card
+            const soilCard = document.querySelector('.dashboard-card.card-2 h2');
+            if (soilCard && !soilCard.querySelector('.refresh-btn')) {
+                const refreshBtn = document.createElement('button');
+                refreshBtn.className = 'refresh-btn ml-2 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors';
+                refreshBtn.innerHTML = '<i data-lucide="refresh-cw" class="w-4 h-4"></i>';
+                refreshBtn.onclick = () => {
+                    refreshBtn.classList.add('animate-spin');
+                    fetchSoilData(true);
+                    setTimeout(() => refreshBtn.classList.remove('animate-spin'), 2000);
+                };
+                soilCard.appendChild(refreshBtn);
+                lucide.createIcons();
+            }
+        }
+        
+        function addDataFreshnessIndicators() {
+            const weatherCard = document.querySelector('.dashboard-card.card-1');
+            const soilCard = document.querySelector('.dashboard-card.card-2');
+            
+            if (weatherCard) weatherCard.setAttribute('data-freshness', 'weather');
+            if (soilCard) soilCard.setAttribute('data-freshness', 'soil');
+        }
+
+        // Clean up intervals on page unload
+        window.addEventListener('beforeunload', () => {
+            Object.values(updateIntervals).forEach(interval => clearInterval(interval));
         });
 
         // --- Prediction readiness gate (require soil + weather + area) ---
